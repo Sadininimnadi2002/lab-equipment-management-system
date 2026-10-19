@@ -5,21 +5,50 @@ const notFound = (req, res, next) => {
   next(error);
 };
 
-// Handle application errors
+/**
+ * Centralized Error Handling Middleware
+ */
 const errorHandler = (err, req, res, next) => {
-  const statusCode = res.statusCode >= 400
-    ? res.statusCode
-    : 500;
+  let statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+  let message = err.message || 'Internal Server Error';
+
+  // Handle Mongoose Bad ObjectId (CastError)
+  if (err.name === 'CastError' && err.kind === 'ObjectId') {
+    statusCode = 404;
+    message = 'Resource not found with the specified ID';
+  }
+
+  // Handle Mongoose Duplicate Key Error (code 11000)
+  if (err.code === 11000) {
+    statusCode = 400;
+    const field = Object.keys(err.keyValue || {})[0] || 'Field';
+    message = `Duplicate value entered for '${field}'. Please provide an alternative value`;
+  }
+
+  // Handle Mongoose Validation Error
+  if (err.name === 'ValidationError') {
+    statusCode = 400;
+    message = Object.values(err.errors)
+      .map((val) => val.message)
+      .join(', ');
+  }
+
+  // Handle JWT Error
+  if (err.name === 'JsonWebTokenError') {
+    statusCode = 401;
+    message = 'Invalid authentication token';
+  }
+
+  if (err.name === 'TokenExpiredError') {
+    statusCode = 401;
+    message = 'Authentication token expired, please sign in again';
+  }
 
   res.status(statusCode).json({
-    message: err.message || "Internal Server Error",
-    ...(process.env.NODE_ENV !== "production" && {
-      stack: err.stack,
-    }),
+    success: false,
+    message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
   });
 };
 
-module.exports = {
-  notFound,
-  errorHandler,
-};
+module.exports = { notFound, errorHandler };
